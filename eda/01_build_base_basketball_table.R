@@ -63,6 +63,12 @@ draft_pos_df = draft_df %>% mutate(
   draft_pos_flag
 ) %>% mutate(
   playerID = as.character(playerID)
+) %>% group_by(
+  playerID
+) %>% mutate(
+  draft_rank = rank(draft_pos_flag, ties.method = "first")
+) %>% filter(
+  draft_rank == 1
 )
 
 basketball_awards_df = read.csv(file.path(data_path, "basketball_awards_players.csv"))
