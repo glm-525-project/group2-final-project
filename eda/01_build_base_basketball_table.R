@@ -15,11 +15,36 @@ data_path = file.path(project_repo, "data\\basketball_data", fsep = "\\")
 
 ### LIBRARIES, LOCATIONS, LITERALS, ETC. GO ABOVE HERE
 
-players_df = read.csv(file.path(data_path, "basketball_players.csv"))
+agg_data = function(x, y) {
+  return(ifelse(is.infinite(x/y), 0, x/y))
+}
 
-agg_player_df = players_df %>% select(
+players_df = read.csv(file.path(data_path, "basketball_players.csv")) %>% select(
   -note
+) %>% filter(
+  !(playerID == "lucasjo01" & year == 2010)
+)
+
+playoffs_df = read.csv(
+  file.path(data_path, "basketball_series_post.csv"), 
+  stringsAsFactors = F
+) %>% filter(
+  round == "F"
+) %>% select(
+  year,
+  tmIDWinner
 ) %>% mutate(
+  champion = 1
+)
+
+playoff_players_df = players_df %>% left_join(
+  playoffs_df,
+  by=c("tmID" = "tmIDWinner", "year" = "year")
+) %>% mutate(
+  champion = ifelse(PostGP > 0, coalesce(champion, 0), 0)
+)
+
+agg_player_df = playoff_players_df  %>% mutate(
   playerID = as.character(playerID),
   nba_seasons = ifelse(year >= 1976, 1, 0)
 ) %>% group_by(
@@ -36,7 +61,7 @@ agg_player_df = players_df %>% select(
   sum
 ) %>% filter(
   nba_seasons > 0 & max_year <= 2010 & GP >= 82*5
-) 
+) %>% ungroup()
 
 hof_df = read.csv(file.path(data_path, "basketball_hof.csv"))
 reduce_hof_df = hof_df %>% filter(hofID != "" & category == "Player") %>% select(
@@ -96,19 +121,15 @@ awards_df = basketball_awards_df %>% mutate(
   ... = 0
 )
 
-
 rebuild_players_df = agg_player_df %>% mutate(
   seasons_played = max_year - min_year,
-  ppg = ifelse(GP == 0, 0, points/GP),
-  fg_percentage = ifelse(fgAttempted == 0, 0, fgMade/fgAttempted),
-  ft_percentage = ifelse(ftAttempted == 0, 0, ftMade/ftAttempted),
-  three_percentage = ifelse(threeAttempted == 0, 0, threeMade/threeAttempted),
-  assists_to_turnovers = ifelse(turnovers == 0, 0, assists/turnovers),
-  post_ppg = ifelse(PostGP == 0, 0, PostPoints/PostGP),
-  post_fg_percentage = ifelse(PostfgAttempted == 0, 0, PostfgMade/PostfgAttempted),
-  post_ft_percentage = ifelse(PostftAttempted == 0, 0, PostftMade/PostftAttempted),
-  post_three_percentage = ifelse(PostthreeAttempted == 0, 0, PostthreeMade/PostthreeAttempted),
-  post_assists_to_turnovers = ifelse(PostTurnovers == 0, 0, PostAssists/PostTurnovers)
+  pts_per_36m = agg_data(points, minutes)*36,
+  fg_percentage = agg_data(fgMade, fgAttempted),
+  ft_percentage = agg_data(ftMade, ftAttempted),
+  asts_per_36m = agg_data(assists, minutes)*36,
+  stls_per_36m = agg_data(steals, minutes)*36,
+  blks_per_36m = agg_data(blocks, minutes)*36,
+  rbs_per_36m = agg_data(rebounds, minutes)*36
 )
 
 basketball_joins_df = rebuild_players_df %>% left_join(
@@ -129,45 +150,19 @@ basketball_joins_df = rebuild_players_df %>% left_join(
   other_awards = ifelse(is.na(other_awards), 0, other_awards)
 )
 
-final_basketball_df = basketball_joins_df %>% select(
+
+basketball_df = basketball_joins_df %>% mutate(
+  total_awards = all_nba_team + mvp + finals_mvp + other_awards
+) %>% select(
   hof_flag,
-  playerID,
-  seasons_played,
-  GP,
-  ppg,
+  pts_per_36m,
   fg_percentage,
-  fgAttempted,
   ft_percentage,
-  ftAttempted,
-  three_percentage,
-  threeAttempted,
-  assists_to_turnovers,
-  assists,
-  turnovers,
-  steals,
-  blocks,
-  PF,
-  oRebounds,
-  dRebounds,
-  PostGP,
-  post_ppg,
-  post_fg_percentage,
-  PostfgAttempted,
-  post_ft_percentage,
-  PostftAttempted,
-  post_three_percentage,
-  PostthreeAttempted,
-  post_assists_to_turnovers,
-  PostAssists,
-  PostTurnovers,
-  PostSteals,
-  PostBlocks,
-  PostPF,
-  PostoRebounds,
-  PostdRebounds,
+  asts_per_36m,
+  stls_per_36m,
+  blks_per_36m,
+  rbs_per_36m,
   draft_pos_flag,
-  all_nba_team,
-  mvp,
-  finals_mvp,
-  other_awards
+  total_awards,
+  champion
 )
