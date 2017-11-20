@@ -37,6 +37,11 @@ playoffs_df = read.csv(
   champion = 1
 )
 
+attendance_df = read.csv(
+  file.path(data_path, "basketball_attendance.csv"),
+  stringsAsFactors = F
+)
+
 playoff_players_df = players_df %>% left_join(
   playoffs_df,
   by=c("tmID" = "tmIDWinner", "year" = "year")
@@ -44,18 +49,33 @@ playoff_players_df = players_df %>% left_join(
   champion = ifelse(PostGP > 0, coalesce(champion, 0), 0)
 )
 
-agg_player_df = playoff_players_df  %>% mutate(
+all_star_votes_df = read.csv(
+  file.path(data_path, "basketball_allstar_votes.csv"),
+  stringsAsFactors = FALSE
+) %>% rename(playerID = playerid) %>% select(-name)
+
+agg_player_df = playoff_players_df %>% left_join(
+  attendance_df,
+  by=c("tmID", "year")
+) %>% left_join(
+  all_star_votes_df,
+  by=c("playerID", "year")
+) %>% mutate(
   playerID = as.character(playerID),
   nba_seasons = ifelse(year >= 1976, 1, 0)
 ) %>% group_by(
   playerID
-) %>% mutate(
+)  %>% mutate(
   min_year = min(year),
-  max_year = max(year)
+  max_year = max(year),
+  per_rank_attend = mean(per_rank_attend, na.rm = T)
 ) %>% ungroup() %>% group_by(
   playerID,
   min_year,
-  max_year
+  max_year,
+  per_rank_attend
+) %>% mutate(
+  votes = ifelse(is.na(votes), 0, votes)
 ) %>% summarize_at(
   vars(GP:nba_seasons),
   sum
@@ -121,6 +141,35 @@ awards_df = basketball_awards_df %>% mutate(
   ... = 0
 )
 
+adv_stats_df = read.csv(
+  file.path(data_path, "basketball_adv_stats.csv"),
+  stringsAsFactors = FALSE
+)
+
+agg_adv_stats_df = adv_stats_df %>% group_by(
+  playerID
+) %>% summarise_at(
+  vars(off_win_share:player_eff_rating),
+  funs(mean(., na.rm = TRUE))
+)
+
+all_star_df = read.csv(
+  file.path(data_path, "basketball_player_allstar.csv"), 
+  stringsAsFactors = FALSE
+)
+
+agg_all_star_df = all_star_df %>% rename(
+  playerID = player_id
+) %>% group_by(
+  playerID
+) %>% summarise(
+  all_star_app = n()
+) %>% select(
+  playerID,
+  all_star_app
+)
+
+
 rebuild_players_df = agg_player_df %>% mutate(
   seasons_played = max_year - min_year,
   pts_per_36m = agg_data(points, minutes)*36,
@@ -141,13 +190,22 @@ basketball_joins_df = rebuild_players_df %>% left_join(
 ) %>% left_join(
   awards_df,
   by = "playerID"
+) %>% left_join(
+  agg_adv_stats_df,
+  by = "playerID"
+) %>% left_join(
+  agg_all_star_df,
+  by = "playerID"
 ) %>% mutate(
   hof_flag = ifelse(is.na(hof_flag), 0, 1),
   draft_pos_flag = ifelse(is.na(draft_pos_flag), "Undrafted", draft_pos_flag),
   all_nba_team = ifelse(is.na(all_nba_team), 0, all_nba_team),
   mvp = ifelse(is.na(mvp), 0, mvp),
   finals_mvp = ifelse(is.na(finals_mvp), 0, finals_mvp),
-  other_awards = ifelse(is.na(other_awards), 0, other_awards)
+  other_awards = ifelse(is.na(other_awards), 0, other_awards),
+  all_star_games = ifelse(is.na(all_star_app), 0, all_star_app),
+  all_star_votes = votes,
+  champion = ifelse(champion > 0, "Champion", "Not Champion")
 )
 
 
@@ -162,7 +220,12 @@ basketball_df = basketball_joins_df %>% mutate(
   stls_per_36m,
   blks_per_36m,
   rbs_per_36m,
+  per_rank_attend,
+  all_star_games,
+  all_star_votes,
   draft_pos_flag,
   total_awards,
   champion
 )
+
+write.csv(basketball_df, file.path(data_path, "basketball_glm_data.csv"), row.names = F)
