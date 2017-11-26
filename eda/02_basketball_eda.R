@@ -86,10 +86,14 @@ rownames(cor_matrix) <- colnames(cont_df)
 
 cont_vars = colnames(cont_df)
 
+detach(df)
+
 # Check Vars Plots
+
+df = df %>% mutate(
+  all_star_votes = log(all_star_votes + 1)
+)
 
 cont_var_list = sapply(cont_vars, function(x) check_continuous_vars(df, x, 10), simplify = FALSE, USE.NAMES = T)
 cont_var_glm = sapply(cont_vars, function(x) summary(basketball_univariate_glm(x, df)), simplify = FALSE, USE.NAMES = T)
-
-
 
