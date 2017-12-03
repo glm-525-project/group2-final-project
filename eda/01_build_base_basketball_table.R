@@ -8,6 +8,7 @@ library(dplyr)
 library(tidyr)
 library(foreign)
 library(ggplot2)
+library(stringr)
 
 project_repo = file.path(Sys.getenv("USERPROFILE"), "repos\\group2-final-project", fsep="\\")
 
@@ -25,6 +26,31 @@ players_df = read.csv(file.path(data_path, "basketball_players.csv")) %>% select
   !(playerID == "lucasjo01" & year == 2010)
 )
 
+player_info_df = read.csv(file.path(data_path, "basketball_master.csv")) %>% select(
+  bioID,
+  pos,
+  useFirst,
+  lastName
+) %>% mutate(
+  playerID = bioID,
+  position = str_extract(pos, "\\w"),
+  player_name = paste0(lastName, ", ", useFirst)
+) %>% select(
+  playerID,
+  position,
+  player_name
+)
+
+all_star_votes_df = read.csv(
+  file.path(data_path, "basketball_allstar_votes.csv"),
+  stringsAsFactors = FALSE
+) %>% rename(playerID = playerid) %>% select(-name)
+
+attendance_df = read.csv(
+  file.path(data_path, "basketball_attendance.csv"),
+  stringsAsFactors = F
+)
+
 playoffs_df = read.csv(
   file.path(data_path, "basketball_series_post.csv"), 
   stringsAsFactors = F
@@ -37,40 +63,37 @@ playoffs_df = read.csv(
   champion = 1
 )
 
-attendance_df = read.csv(
-  file.path(data_path, "basketball_attendance.csv"),
-  stringsAsFactors = F
-)
-
-playoff_players_df = players_df %>% left_join(
+init_players_df = players_df %>% left_join(
   playoffs_df,
   by=c("tmID" = "tmIDWinner", "year" = "year")
 ) %>% mutate(
   champion = ifelse(PostGP > 0, coalesce(champion, 0), 0)
-)
-
-all_star_votes_df = read.csv(
-  file.path(data_path, "basketball_allstar_votes.csv"),
-  stringsAsFactors = FALSE
-) %>% rename(playerID = playerid) %>% select(-name)
-
-agg_player_df = playoff_players_df %>% left_join(
+) %>% left_join(
+  player_info_df,
+  by=c("playerID")
+) %>% left_join(
   attendance_df,
   by=c("tmID", "year")
 ) %>% left_join(
   all_star_votes_df,
   by=c("playerID", "year")
-) %>% mutate(
+)
+
+agg_player_df = init_players_df %>% mutate(
   playerID = as.character(playerID),
   nba_seasons = ifelse(year >= 1976, 1, 0)
 ) %>% group_by(
-  playerID
+  playerID,
+  player_name,
+  position
 )  %>% mutate(
   min_year = min(year),
   max_year = max(year),
   per_rank_attend = mean(per_rank_attend, na.rm = T)
 ) %>% ungroup() %>% group_by(
   playerID,
+  player_name,
+  position,
   min_year,
   max_year,
   per_rank_attend
@@ -213,6 +236,8 @@ basketball_df = basketball_joins_df %>% mutate(
   total_awards = all_nba_team + mvp + finals_mvp + other_awards
 ) %>% select(
   hof_flag,
+  player_name,
+  position,
   pts_per_36m,
   fg_percentage,
   ft_percentage,
